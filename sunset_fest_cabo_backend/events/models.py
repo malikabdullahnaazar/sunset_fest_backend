@@ -1,9 +1,9 @@
-# event/models.py
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 import uuid
 from django.contrib.auth import get_user_model
+from datetime import timedelta
 
 class Event(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -49,16 +49,32 @@ class PricingPlan(models.Model):
     banner_image = models.ImageField(upload_to='pricing_banners/', null=True, blank=True)
     feature = models.ManyToManyField(Feature, related_name='features')
     total_tickets = models.PositiveIntegerField(default=0)
-    available_tickets = models.PositiveIntegerField(default=0)
     
     def clean(self):
-        if self.available_tickets > self.total_tickets:
-            raise ValidationError("Available tickets cannot exceed total tickets")
+        pass  # Removed available_tickets validation as it’s now dynamic
+    
+    def get_available_tickets(self):
+        # Calculate tickets used by confirmed bookings
+        confirmed_bookings = Booking.objects.filter(
+            pricing_plan=self,
+            status='CONFIRMED'
+        )
+        tickets_used = sum(
+            booking.group_size.number_of_persons
+            for booking in confirmed_bookings
+        )
+        
+        # Calculate tickets currently held
+        active_holds = TicketHold.objects.filter(
+            pricing_plan=self,
+            expires_at__gt=timezone.now()
+        )
+        held_tickets = sum(hold.number_of_tickets for hold in active_holds)
+        
+        return self.total_tickets - tickets_used - held_tickets
     
     def __str__(self):
         return f"{self.title} - {self.event_date.title}"
-
-
 
 class GroupSize(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -74,7 +90,7 @@ class GroupSize(models.Model):
 
 class Accommodation(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    pricing_plan =models.ForeignKey(PricingPlan, on_delete=models.CASCADE, related_name='event',blank=True,null=True)
+    pricing_plan = models.ForeignKey(PricingPlan, on_delete=models.CASCADE, related_name='event', blank=True, null=True)
     title = models.CharField(max_length=200)
     description = models.TextField()
     rating = models.FloatField()
@@ -106,14 +122,13 @@ class Room(models.Model):
     total_tickets = models.PositiveIntegerField(default=0)
     available_tickets = models.PositiveIntegerField(default=0)
     bed_type = models.CharField(max_length=50, choices=[('single', 'Single Bed'), ('double', 'Double Bed')], default="double")
-
+    
     def clean(self):
         if self.available_tickets > self.total_tickets:
             raise ValidationError("Available tickets cannot exceed total tickets")
     
     def __str__(self):
         return f"{self.title} - {self.accommodation.title}"
-
 
 class RoomImage(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -125,7 +140,7 @@ class RoomImage(models.Model):
 
 class AddOn(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='AddOn',blank=True,null=True)
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='AddOn', blank=True, null=True)
     title = models.CharField(max_length=200)
     description = models.TextField()
     price = models.DecimalField(max_digits=10, decimal_places=2)
@@ -156,7 +171,6 @@ class HotelBooking(models.Model):
         if self.check_out_date <= self.check_in_date:
             raise ValidationError("Check-out date must be after check-in date")
         
-        # Check for overlapping bookings
         overlapping_bookings = HotelBooking.objects.filter(
             accommodation=self.accommodation,
             check_in_date__lt=self.check_out_date,
@@ -168,6 +182,31 @@ class HotelBooking(models.Model):
     
     def __str__(self):
         return f"Booking for {self.accommodation.title} ({self.check_in_date} to {self.check_out_date})"
+
+class TicketHold(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(get_user_model(), on_delete=models.CASCADE)
+    pricing_plan = models.ForeignKey(PricingPlan, on_delete=models.CASCADE)
+    number_of_tickets = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['pricing_plan', 'expires_at'])
+        ]
+    
+    def save(self, *args, **kwargs):
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timedelta(minutes=10)
+        super().save(*args, **kwargs)
+    
+    def extend_hold(self, extra_minutes=5):
+        self.expires_at += timedelta(minutes=extra_minutes)
+        self.save()
+    
+    def __str__(self):
+        return f"Hold for {self.number_of_tickets} tickets by {self.user.username}"
 
 class Booking(models.Model):
     STATUS_CHOICES = (
@@ -184,43 +223,44 @@ class Booking(models.Model):
     hotel_booking = models.ForeignKey(HotelBooking, on_delete=models.CASCADE, null=True)
     room = models.ForeignKey(Room, on_delete=models.CASCADE, null=True)
     add_ons = models.ManyToManyField(AddOn, blank=True)
+    ticket_hold = models.ForeignKey(TicketHold, on_delete=models.SET_NULL, null=True, blank=True)
     total_price = models.DecimalField(max_digits=12, decimal_places=2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
     def validate_tickets(self):
+        tickets_needed = self.group_size.number_of_persons
+        
         # Check ticket availability for pricing plan
-        if self.pricing_plan.available_tickets < self.group_size.number_of_persons:
+        if self.pricing_plan.get_available_tickets() < tickets_needed:
             raise ValidationError(
                 f"Not enough tickets available for pricing plan {self.pricing_plan.title}"
             )
         
         # Check ticket availability for accommodation if selected
-        if self.hotel_booking and self.hotel_booking.accommodation.available_tickets < self.group_size.number_of_persons:
+        if self.hotel_booking and self.hotel_booking.accommodation.available_tickets < tickets_needed:
             raise ValidationError(
                 f"Not enough tickets available for accommodation {self.hotel_booking.accommodation.title}"
             )
         
         # Check ticket availability for room if selected
-        if self.room and self.room.available_tickets < self.group_size.number_of_persons:
+        if self.room and self.room.available_tickets < tickets_needed:
             raise ValidationError(
                 f"Not enough tickets available for room {self.room.title}"
             )
         
         # Check ticket availability for each add-on
         for add_on in self.add_ons.all():
-            if add_on.available_tickets < self.group_size.number_of_persons:
+            if add_on.available_tickets < tickets_needed:
                 raise ValidationError(
                     f"Not enough tickets available for add-on {add_on.title}"
                 )
     
     def update_tickets(self):
-        # Update ticket counts
         tickets_needed = self.group_size.number_of_persons
-        self.pricing_plan.available_tickets -= tickets_needed
-        self.pricing_plan.save()
         
+        # Update accommodation and room tickets
         if self.hotel_booking:
             self.hotel_booking.accommodation.available_tickets -= tickets_needed
             self.hotel_booking.accommodation.save()
@@ -249,6 +289,8 @@ class Booking(models.Model):
             self.total_price = self.calculate_total_price()
             super().save(*args, **kwargs)
             self.update_tickets()
+            if self.ticket_hold:
+                self.ticket_hold.delete()  # Remove hold once booking is confirmed
         else:
             self.total_price = self.calculate_total_price()
             super().save(*args, **kwargs)

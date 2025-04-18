@@ -1,10 +1,10 @@
-# event/serializers.py
 from rest_framework import serializers
 from .models import (
     Event, EventDate, PricingPlan, Feature, GroupSize,
     Accommodation, AccommodationImage, Room, RoomImage,
-    AddOn, HotelBooking, Booking
+    AddOn, HotelBooking, Booking, TicketHold
 )
+from django.utils import timezone
 
 class FeatureSerializer(serializers.ModelSerializer):
     class Meta:
@@ -13,10 +13,14 @@ class FeatureSerializer(serializers.ModelSerializer):
 
 class PricingPlanSerializer(serializers.ModelSerializer):
     feature = FeatureSerializer(many=True, read_only=True)
+    available_tickets = serializers.SerializerMethodField()
     
     class Meta:
         model = PricingPlan
         fields = ['id', 'title', 'description', 'price', 'banner_image', 'feature', 'total_tickets', 'available_tickets']
+    
+    def get_available_tickets(self, obj):
+        return obj.get_available_tickets()
 
 class GroupSizeSerializer(serializers.ModelSerializer):
     class Meta:
@@ -35,7 +39,7 @@ class EventSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Event
-        fields = ['id', 'title', 'description', 'event_type', 'dates','image']
+        fields = ['id', 'title', 'description', 'event_type', 'dates', 'image']
 
 class AccommodationImageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -56,15 +60,16 @@ class RoomImageSerializer(serializers.ModelSerializer):
 
 class RoomSerializer(serializers.ModelSerializer):
     images = RoomImageSerializer(many=True, read_only=True)
-    accommodation =AccommodationSerializer(read_only=True)
+    accommodation = AccommodationSerializer(read_only=True)
+    
     class Meta:
         model = Room
-        fields = ['id', 'title', 'description', 'price', 'images', 'total_tickets', 'available_tickets','accommodation','bed_type']
+        fields = ['id', 'title', 'description', 'price', 'images', 'total_tickets', 'available_tickets', 'accommodation', 'bed_type']
 
 class AddOnSerializer(serializers.ModelSerializer):
     class Meta:
         model = AddOn
-        fields = ['id', 'title', 'description', 'price', 'image', 'total_tickets', 'available_tickets','event']
+        fields = ['id', 'title', 'description', 'price', 'image', 'total_tickets', 'available_tickets', 'event']
 
 class HotelBookingSerializer(serializers.ModelSerializer):
     accommodation = AccommodationSerializer(read_only=True)
@@ -76,6 +81,27 @@ class HotelBookingSerializer(serializers.ModelSerializer):
         model = HotelBooking
         fields = ['id', 'accommodation', 'accommodation_id', 'check_in_date', 'check_out_date']
 
+class TicketHoldSerializer(serializers.ModelSerializer):
+    pricing_plan = PricingPlanSerializer(read_only=True)
+    pricing_plan_id = serializers.PrimaryKeyRelatedField(
+        queryset=PricingPlan.objects.all(), source='pricing_plan', write_only=True
+    )
+    
+    class Meta:
+        model = TicketHold
+        fields = ['id', 'pricing_plan', 'pricing_plan_id', 'number_of_tickets', 'created_at', 'expires_at']
+    
+    def validate(self, data):
+        tickets_needed = data['number_of_tickets']
+        pricing_plan = data['pricing_plan']
+        
+        if pricing_plan.get_available_tickets() < tickets_needed:
+            raise serializers.ValidationError(
+                f"Not enough tickets available for pricing plan {pricing_plan.title}"
+            )
+        
+        return data
+
 class BookingSerializer(serializers.ModelSerializer):
     event_date = EventDateSerializer(read_only=True)
     pricing_plan = PricingPlanSerializer(read_only=True)
@@ -83,13 +109,14 @@ class BookingSerializer(serializers.ModelSerializer):
     hotel_booking = HotelBookingSerializer(read_only=True)
     room = RoomSerializer(read_only=True)
     add_ons = AddOnSerializer(many=True, read_only=True)
+    ticket_hold = TicketHoldSerializer(read_only=True)
     
     class Meta:
         model = Booking
         fields = [
             'id', 'event_date', 'pricing_plan', 'group_size',
-            'hotel_booking', 'room', 'add_ons', 'total_price',
-            'status', 'created_at', 'updated_at'
+            'hotel_booking', 'room', 'add_ons', 'ticket_hold',
+            'total_price', 'status', 'created_at', 'updated_at'
         ]
 
 class BookingCreateSerializer(serializers.ModelSerializer):
@@ -98,19 +125,22 @@ class BookingCreateSerializer(serializers.ModelSerializer):
     room_id = serializers.PrimaryKeyRelatedField(
         queryset=Room.objects.all(), source='room', required=False, allow_null=True
     )
+    ticket_hold_id = serializers.PrimaryKeyRelatedField(
+        queryset=TicketHold.objects.all(), source='ticket_hold', required=False, allow_null=True
+    )
     
     class Meta:
         model = Booking
         fields = [
             'event_date', 'pricing_plan', 'group_size',
-            'hotel_booking', 'room_id', 'add_ons'
+            'hotel_booking', 'room_id', 'add_ons', 'ticket_hold_id'
         ]
     
     def validate(self, data):
-        # Ensure all related objects belong to the correct hierarchy
         event_date = data['event_date']
         pricing_plan = data['pricing_plan']
         group_size = data['group_size']
+        ticket_hold = data.get('ticket_hold')
         
         if pricing_plan.event_date != event_date:
             raise serializers.ValidationError("Pricing plan does not belong to the selected event date")
@@ -122,9 +152,19 @@ class BookingCreateSerializer(serializers.ModelSerializer):
             if data['room'].accommodation != data['hotel_booking']['accommodation']:
                 raise serializers.ValidationError("Room must belong to the selected accommodation")
         
-        # Validate ticket availability
         tickets_needed = group_size.number_of_persons
-        if pricing_plan.available_tickets < tickets_needed:
+        
+        # Validate ticket hold if provided
+        if ticket_hold:
+            if ticket_hold.pricing_plan != pricing_plan:
+                raise serializers.ValidationError("Ticket hold does not belong to the selected pricing plan")
+            if ticket_hold.number_of_tickets < tickets_needed:
+                raise serializers.ValidationError("Ticket hold does not cover enough tickets")
+            if ticket_hold.expires_at < timezone.now():
+                raise serializers.ValidationError("Ticket hold has expired")
+        
+        # Validate ticket availability
+        if pricing_plan.get_available_tickets() < tickets_needed:
             raise serializers.ValidationError(
                 f"Not enough tickets available for pricing plan {pricing_plan.title}"
             )
@@ -153,7 +193,6 @@ class BookingCreateSerializer(serializers.ModelSerializer):
         add_ons = validated_data.pop('add_ons', [])
         hotel_booking_data = validated_data.pop('hotel_booking', None)
         
-        # Create hotel booking if provided
         hotel_booking = None
         if hotel_booking_data:
             hotel_booking = HotelBooking.objects.create(**hotel_booking_data)
@@ -164,4 +203,6 @@ class BookingCreateSerializer(serializers.ModelSerializer):
             **validated_data
         )
         booking.add_ons.set(add_ons)
+        booking.status = 'CONFIRMED'
+        booking.save()
         return booking

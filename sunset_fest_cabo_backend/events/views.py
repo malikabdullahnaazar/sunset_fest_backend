@@ -1,17 +1,18 @@
-# event/views.py
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.decorators import action
 from .models import (
     Event, EventDate, PricingPlan, Feature, GroupSize,
-    Accommodation, Room, AddOn, HotelBooking, Booking
+    Accommodation, Room, AddOn, HotelBooking, Booking, TicketHold
 )
 from .serializers import (
     EventSerializer, EventDateSerializer, PricingPlanSerializer,
     FeatureSerializer, GroupSizeSerializer, AccommodationSerializer,
     RoomSerializer, AddOnSerializer, HotelBookingSerializer,
-    BookingSerializer, BookingCreateSerializer
+    BookingSerializer, BookingCreateSerializer, TicketHoldSerializer
 )
+from django.utils import timezone
 
 class EventViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Event.objects.all()
@@ -50,7 +51,7 @@ class GroupSizeViewSet(viewsets.ReadOnlyModelViewSet):
 class AccommodationViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Accommodation.objects.all()
     serializer_class = AccommodationSerializer
-
+    
     def get_queryset(self):
         pricing_plan_id = self.request.query_params.get('pricing_plan_id')
         if pricing_plan_id:
@@ -70,7 +71,7 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
 class AddOnViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = AddOn.objects.all()
     serializer_class = AddOnSerializer
-
+    
     def get_queryset(self):
         event_id = self.request.query_params.get('event_id')
         if event_id:
@@ -83,6 +84,30 @@ class HotelBookingViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         serializer.save()
+
+class TicketHoldViewSet(viewsets.ModelViewSet):
+    queryset = TicketHold.objects.all()
+    serializer_class = TicketHoldSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        return self.queryset.filter(user=self.request.user, expires_at__gt=timezone.now())
+    
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+    
+    @action(detail=True, methods=['post'])
+    def extend(self, request, pk=None):
+        try:
+            ticket_hold = self.get_queryset().get(pk=pk)
+            extra_minutes = request.data.get('extra_minutes', 5)
+            ticket_hold.extend_hold(extra_minutes)
+            return Response(TicketHoldSerializer(ticket_hold).data, status=status.HTTP_200_OK)
+        except TicketHold.DoesNotExist:
+            return Response(
+                {"error": "Ticket hold not found or has expired"},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
 class BookingViewSet(viewsets.ModelViewSet):
     queryset = Booking.objects.all()
