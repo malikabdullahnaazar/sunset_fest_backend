@@ -56,15 +56,15 @@ class RoomImageSerializer(serializers.ModelSerializer):
 
 class RoomSerializer(serializers.ModelSerializer):
     images = RoomImageSerializer(many=True, read_only=True)
-    
+    accommodation =AccommodationSerializer(read_only=True)
     class Meta:
         model = Room
-        fields = ['id', 'title', 'description', 'price', 'images', 'total_tickets', 'available_tickets']
+        fields = ['id', 'title', 'description', 'price', 'images', 'total_tickets', 'available_tickets','accommodation','bed_type']
 
 class AddOnSerializer(serializers.ModelSerializer):
     class Meta:
         model = AddOn
-        fields = ['id', 'title', 'description', 'price', 'image', 'total_tickets', 'available_tickets']
+        fields = ['id', 'title', 'description', 'price', 'image', 'total_tickets', 'available_tickets','event']
 
 class HotelBookingSerializer(serializers.ModelSerializer):
     accommodation = AccommodationSerializer(read_only=True)
