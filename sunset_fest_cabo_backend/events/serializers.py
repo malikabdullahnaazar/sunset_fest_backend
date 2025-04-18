@@ -12,11 +12,11 @@ class FeatureSerializer(serializers.ModelSerializer):
         fields = ['id', 'name']
 
 class PricingPlanSerializer(serializers.ModelSerializer):
-    features = FeatureSerializer(many=True, read_only=True)
+    feature = FeatureSerializer(many=True, read_only=True)
     
     class Meta:
         model = PricingPlan
-        fields = ['id', 'title', 'description', 'price', 'banner_image', 'features', 'total_tickets', 'available_tickets']
+        fields = ['id', 'title', 'description', 'price', 'banner_image', 'feature', 'total_tickets', 'available_tickets']
 
 class GroupSizeSerializer(serializers.ModelSerializer):
     class Meta:
@@ -35,7 +35,7 @@ class EventSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Event
-        fields = ['id', 'title', 'description', 'event_type', 'dates']
+        fields = ['id', 'title', 'description', 'event_type', 'dates','image']
 
 class AccommodationImageSerializer(serializers.ModelSerializer):
     class Meta:
