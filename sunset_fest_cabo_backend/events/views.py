@@ -51,6 +51,12 @@ class AccommodationViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Accommodation.objects.all()
     serializer_class = AccommodationSerializer
 
+    def get_queryset(self):
+        pricing_plan_id = self.request.query_params.get('pricing_plan_id')
+        if pricing_plan_id:
+            return self.queryset.filter(pricing_plan_id=pricing_plan_id)
+        return self.queryset
+
 class RoomViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Room.objects.all()
     serializer_class = RoomSerializer
@@ -64,6 +70,12 @@ class RoomViewSet(viewsets.ReadOnlyModelViewSet):
 class AddOnViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = AddOn.objects.all()
     serializer_class = AddOnSerializer
+
+    def get_queryset(self):
+        event_id = self.request.query_params.get('event_id')
+        if event_id:
+            return self.queryset.filter(event_id=event_id)
+        return self.queryset
 
 class HotelBookingViewSet(viewsets.ModelViewSet):
     queryset = HotelBooking.objects.all()
