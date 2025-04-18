@@ -21,10 +21,9 @@ class EventDateAdmin(admin.ModelAdmin):
 
 @admin.register(PricingPlan)
 class PricingPlanAdmin(admin.ModelAdmin):
-    list_display = ['title', 'event_date', 'price', 'total_tickets', 'available_tickets']
+    list_display = ['title', 'event_date', 'price', 'total_tickets', ]
     search_fields = ['title', 'description']
     list_filter = ['event_date']
-    readonly_fields = ['available_tickets']
 
 @admin.register(Feature)
 class FeatureAdmin(admin.ModelAdmin):
