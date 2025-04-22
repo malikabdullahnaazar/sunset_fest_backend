@@ -415,7 +415,8 @@ class TicketHold(models.Model):
             room_hold.extend_hold(extra_minutes)
 
     def __str__(self):
-        return f"Hold for {self.number_of_tickets} tickets by {self.user.username}"
+        user_info = self.user.username if self.user else f"Session {self.session_id}"
+        return f"Hold for {self.number_of_tickets} tickets by {user_info}"
 
 
 class Booking(models.Model):
