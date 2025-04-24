@@ -16,6 +16,7 @@ from .models import (
     AddOnTimeSlot,
     BookingAddOn,
     RoomHold,
+    BookingRoom,
 )
 from django.utils import timezone
 from datetime import timedelta
@@ -238,122 +239,74 @@ class HotelBookingSerializer(serializers.ModelSerializer):
         ]
 
 
+class BookingRoomSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BookingRoom
+        fields = ['room', 'quantity', 'price']
 
-class BookingSerializer(serializers.ModelSerializer):
-    event_date = EventDateSerializer(read_only=True)
-    pricing_plan = PricingPlanSerializer(read_only=True)
-    group_size = GroupSizeSerializer(read_only=True)
-    hotel_booking = HotelBookingSerializer(read_only=True)
+
+class BookingRoomCreateSerializer(serializers.ModelSerializer):
+    room_id = serializers.UUIDField(write_only=True)
     room = RoomSerializer(read_only=True)
-    add_ons = AddOnSerializer(many=True, read_only=True)
+    price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
 
     class Meta:
-        model = Booking
-        fields = [
-            "id",
-            "event_date",
-            "pricing_plan",
-            "group_size",
-            "hotel_booking",
-            "room",
-            "add_ons",
-            "ticket_hold",
-            "total_price",
-            "status",
-            "created_at",
-            "updated_at",
-        ]
+        model = BookingRoom
+        fields = ['room_id', 'room', 'quantity', 'price']
+
+    def validate(self, data):
+        room_id = data.pop('room_id')
+        try:
+            room = Room.objects.get(id=room_id)
+            data['room'] = room
+            # Set price from room if not provided
+            if 'price' not in data:
+                data['price'] = room.price
+        except Room.DoesNotExist:
+            raise serializers.ValidationError(f"Room with id {room_id} does not exist")
+        return data
 
 
 class BookingCreateSerializer(serializers.ModelSerializer):
-    add_ons = serializers.PrimaryKeyRelatedField(
-        many=True, queryset=AddOn.objects.all()
-    )
+    rooms = BookingRoomCreateSerializer(many=True, required=False)
+    user_email = serializers.EmailField(required=False)
     hotel_booking = HotelBookingSerializer(required=False)
-    rooms = serializers.ListField(
-        child=serializers.DictField(
-            child=serializers.CharField(), allow_empty=False
-        ),
-        required=False,
-    )
 
     class Meta:
         model = Booking
         fields = [
-            "event_date",
-            "pricing_plan",
-            "group_size",
-            "hotel_booking",
-            "rooms",
-            "add_ons",
-            "ticket_hold_id",
+            'event_date',
+            'pricing_plan',
+            'group_size',
+            'hotel_booking',
+            'rooms',
+            'add_ons',
+            'user_email',
+            'ticket_hold_id'
         ]
 
-    def validate(self, data):
-        event_date = data["event_date"]
-        pricing_plan = data["pricing_plan"]
-        group_size = data["group_size"]
-        ticket_hold = data.get("ticket_hold")
-
-        if pricing_plan.event_date != event_date:
-            raise serializers.ValidationError(
-                "Pricing plan does not belong to the selected event date"
-            )
-
-        if group_size.pricing_plan != pricing_plan:
-            raise serializers.ValidationError(
-                "Group size does not belong to the selected pricing plan"
-            )
-
-        if data.get("hotel_booking"):
-            accommodation = data["hotel_booking"]["accommodation"]
-            if accommodation.available_tickets < group_size.number_of_persons:
-                raise serializers.ValidationError(
-                    f"Not enough tickets available for accommodation {accommodation.title}"
-                )
-
-        for room_data in data.get("rooms", []):
-            room = Room.objects.get(id=room_data["room_id"])
-            if room.get_available_rooms() < room_data["quantity"]:
-                raise serializers.ValidationError(
-                    f"Not enough rooms available for {room.title}"
-                )
-
-        for add_on in data.get("add_ons", []):
-            if add_on.available_tickets < group_size.number_of_persons:
-                raise serializers.ValidationError(
-                    f"Not enough tickets available for add-on {add_on.title}"
-                )
-
-        return data
-
     def create(self, validated_data):
-        add_ons = validated_data.pop("add_ons", [])
-        hotel_booking_data = validated_data.pop("hotel_booking", None)
-        rooms_data = validated_data.pop("rooms", [])
-
-        hotel_booking = None
-        if hotel_booking_data:
-            hotel_booking = HotelBooking.objects.create(**hotel_booking_data)
-
+        rooms_data = validated_data.pop('rooms', [])
+        hotel_booking = validated_data.pop('hotel_booking', None)
+        add_ons = validated_data.pop('add_ons', [])
+        
+        # Remove status if it exists in validated_data
+        validated_data.pop('status', None)
+        
+        # Create booking
         booking = Booking.objects.create(
-            user=self.context["request"].user,
-            hotel_booking=hotel_booking,
             **validated_data,
+            hotel_booking=hotel_booking,
+            status='CONFIRMED'
         )
+        
+        # Set add-ons
         booking.add_ons.set(add_ons)
-        booking.status = "CONFIRMED"
-        booking.save()
-
+        
+        # Create booking rooms
         for room_data in rooms_data:
-            room = Room.objects.get(id=room_data["room_id"])
-            RoomHold.objects.create(
-                user=self.context["request"].user,
-                room=room,
-                quantity=room_data["quantity"],
-                expires_at=timezone.now() + timedelta(minutes=10),
-            )
-
+            BookingRoom.objects.create(booking=booking, **room_data)
+        
         return booking
 
 
@@ -401,3 +354,28 @@ class CombinedHoldSerializer(serializers.Serializer):
                 raise serializers.ValidationError(f"Quantity must be a valid number")
 
         return data
+
+
+class BookingSerializer(serializers.ModelSerializer):
+    event_date = EventDateSerializer(read_only=True)
+    pricing_plan = PricingPlanSerializer(read_only=True)
+    group_size = GroupSizeSerializer(read_only=True)
+    hotel_booking = HotelBookingSerializer(read_only=True)
+    rooms = BookingRoomSerializer(many=True, read_only=True)
+    add_ons = AddOnSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Booking
+        fields = [
+            'id',
+            'event_date',
+            'pricing_plan',
+            'group_size',
+            'hotel_booking',
+            'rooms',
+            'add_ons',
+            'total_price',
+            'status',
+            'created_at',
+            'updated_at'
+        ]

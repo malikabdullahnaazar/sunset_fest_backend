@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "accounts",
     "events",
+    "payments",
 ]
 
 MIDDLEWARE = [
@@ -197,16 +198,17 @@ EMAIL_HOST_USER = os.getenv("SMTP_USER")
 EMAIL_HOST_PASSWORD = os.getenv("SMTP_PASSWORD")
 FROM_EMAIL = os.getenv("FROM_EMAIL")
 # Base URL for verification/reset links
-FRONTEND_URL = os.getenv("FRONTEND_URL")  # Change to your frontend URL in production
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 
 # Stripe settings
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', 'your_stripe_secret_key')
 STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
 SUBSCRIPTION_PLAN_ID = os.getenv("SUBSCRIPTION_PLAN_ID")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', 'your_stripe_webhook_secret')
 
 # Google OAuth2 settings
-FRONTEND_URL = os.getenv("FRONTEND_URL")
-BACKEND_URL = os.getenv("BACKEND_URL")
 GOOGLE_OAUTH2_CLIENT_ID = os.getenv("GOOGLE_OAUTH2_CLIENT_ID")
 GOOGLE_OAUTH2_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH2_CLIENT_SECRET")
+
+# URLs
+BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8000')

@@ -173,19 +173,20 @@ class Room(models.Model):
         return 2  # default
 
     def get_available_rooms(self):
-        # Get all confirmed bookings for this room type
-        confirmed_bookings = Booking.objects.filter(
-            room=self, status="CONFIRMED"
-        ).count()
+        # Get all confirmed bookings for this room type through BookingRoom
+        confirmed_bookings = BookingRoom.objects.filter(
+            room=self,
+            booking__status='CONFIRMED'
+        ).aggregate(total_quantity=models.Sum('quantity'))['total_quantity'] or 0
 
         # Get all active room holds
         active_room_holds = RoomHold.objects.filter(
-            room=self, expires_at__gt=timezone.now()
-        )
-        held_rooms = sum(hold.quantity for hold in active_room_holds)
+            room=self, 
+            expires_at__gt=timezone.now()
+        ).aggregate(total_quantity=models.Sum('quantity'))['total_quantity'] or 0
 
         # Calculate available rooms
-        available = self.total_rooms - confirmed_bookings - held_rooms
+        available = self.total_rooms - confirmed_bookings - active_room_holds
 
         # Ensure we don't return negative availability
         return max(0, available)
@@ -436,7 +437,6 @@ class Booking(models.Model):
     pricing_plan = models.ForeignKey(PricingPlan, on_delete=models.CASCADE)
     group_size = models.ForeignKey(GroupSize, on_delete=models.CASCADE)
     hotel_booking = models.ForeignKey(HotelBooking, on_delete=models.CASCADE, null=True)
-    room = models.ForeignKey(Room, on_delete=models.CASCADE, null=True)
     add_ons = models.ManyToManyField(AddOn, blank=True)
     ticket_hold = models.ForeignKey(
         TicketHold, on_delete=models.SET_NULL, null=True, blank=True
@@ -464,11 +464,12 @@ class Booking(models.Model):
                 f"Not enough tickets available for accommodation {self.hotel_booking.accommodation.title}"
             )
 
-        # Check ticket availability for room if selected
-        if self.room and self.room.available_rooms < tickets_needed:
-            raise ValidationError(
-                f"Not enough rooms available for room {self.room.title}"
-            )
+        # Check ticket availability for each room
+        for booking_room in self.booking_rooms.all():
+            if booking_room.room.get_available_rooms() < booking_room.quantity:
+                raise ValidationError(
+                    f"Not enough rooms available for {booking_room.room.title}"
+                )
 
         # Check ticket availability for each add-on
         for add_on in self.add_ons.all():
@@ -480,14 +481,15 @@ class Booking(models.Model):
     def update_tickets(self):
         tickets_needed = self.group_size.number_of_persons
 
-        # Update accommodation and room tickets
+        # Update accommodation tickets
         if self.hotel_booking:
             self.hotel_booking.accommodation.available_tickets -= tickets_needed
             self.hotel_booking.accommodation.save()
 
-        if self.room:
-            self.room.available_rooms -= tickets_needed
-            self.room.save()
+        # Update room availability
+        for booking_room in self.booking_rooms.all():
+            booking_room.room.available_rooms -= booking_room.quantity
+            booking_room.room.save()
 
         # For add-ons, we don't need to update availability since it's calculated dynamically
         # The get_available_tickets() method will automatically account for this booking
@@ -497,9 +499,9 @@ class Booking(models.Model):
         total = (
             self.pricing_plan.price
             + self.group_size.base_price
-            + (self.room.price if self.room else 0)
             + (self.hotel_booking.accommodation.price if self.hotel_booking else 0)
         )
+        total += sum(booking_room.price * booking_room.quantity for booking_room in self.booking_rooms.all())
         total += sum(add_on.price for add_on in self.add_ons.all())
         return total
 
@@ -516,7 +518,19 @@ class Booking(models.Model):
             super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"Booking {self.id} - {self.user.username}"
+        return f"Booking {self.id} - {self.user.username if self.user else self.user_email}"
+
+
+class BookingRoom(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='booking_rooms')
+    room = models.ForeignKey(Room, on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField(default=1)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.booking.id} - {self.room.title} x{self.quantity}"
 
 
 class BookingAddOn(models.Model):

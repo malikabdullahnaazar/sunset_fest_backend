@@ -192,10 +192,33 @@ class HotelBookingViewSet(viewsets.ModelViewSet):
 
 class BookingViewSet(viewsets.ModelViewSet):
     queryset = Booking.objects.all()
-    serializer_class = BookingCreateSerializer
+    serializer_class = BookingSerializer
+    permission_classes = [AllowAny]
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return BookingCreateSerializer
+        return BookingSerializer
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        # Get user from request if authenticated
+        user = self.request.user if self.request.user.is_authenticated else None
+        
+        # Get validated data
+        validated_data = serializer.validated_data
+        
+        # Create hotel booking if provided
+        hotel_booking_data = validated_data.pop('hotel_booking', None)
+        hotel_booking = None
+        if hotel_booking_data:
+            hotel_booking = HotelBooking.objects.create(**hotel_booking_data)
+        
+        # Create booking with user and hotel booking
+        booking = serializer.save(
+            user=user,
+            hotel_booking=hotel_booking,
+            status='CONFIRMED'
+        )
 
 
 @api_view(["GET"])
