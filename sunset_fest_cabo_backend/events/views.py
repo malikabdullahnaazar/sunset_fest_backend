@@ -14,7 +14,7 @@ from .models import (
     AddOn,
     HotelBooking,
     Booking,
-    TicketHold,
+    TicketHold, 
     AddOnTimeSlot,
     RoomHold,
 )
@@ -324,20 +324,10 @@ class TicketHoldViewSet(viewsets.ModelViewSet):
 
 class BookingViewSet(viewsets.ModelViewSet):
     queryset = Booking.objects.all()
+    serializer_class = BookingCreateSerializer
 
-    def get_serializer_class(self):
-        if self.action == "create":
-            return BookingCreateSerializer
-        return BookingSerializer
-
-    def get_queryset(self):
-        return self.queryset.filter(user=self.request.user)
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        booking = serializer.save()
-        return Response(BookingSerializer(booking).data, status=status.HTTP_201_CREATED)
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
 
 @api_view(["GET"])

@@ -324,6 +324,9 @@ class HotelBooking(models.Model):
     accommodation = models.ForeignKey(Accommodation, on_delete=models.CASCADE)
     check_in_date = models.DateField()
     check_out_date = models.DateField()
+    checkin_first_name = models.CharField(max_length=100, null=True, blank=True)
+    checkin_last_name = models.CharField(max_length=100, null=True, blank=True)
+    checkin_email = models.EmailField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -427,7 +430,8 @@ class Booking(models.Model):
     )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(get_user_model(), on_delete=models.CASCADE)
+    user = models.ForeignKey(get_user_model(), on_delete=models.CASCADE,blank=True, null=True)
+    user_email=models.EmailField(blank=True, null=True)
     event_date = models.ForeignKey(EventDate, on_delete=models.CASCADE)
     pricing_plan = models.ForeignKey(PricingPlan, on_delete=models.CASCADE)
     group_size = models.ForeignKey(GroupSize, on_delete=models.CASCADE)
