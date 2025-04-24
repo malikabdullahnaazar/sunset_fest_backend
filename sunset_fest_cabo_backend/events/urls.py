@@ -11,8 +11,6 @@ from .views import (
     AddOnViewSet,
     AddOnTimeSlotViewSet,
     BookingViewSet,
-    TicketHoldViewSet,
-    RoomHoldViewSet,
     CombinedHoldView,
     get_addon_availability,
     get_time_slot_availability,
@@ -28,8 +26,6 @@ router.register(r"rooms", RoomViewSet)
 router.register(r"add-ons", AddOnViewSet)
 router.register(r"add-on-time-slots", AddOnTimeSlotViewSet)
 router.register(r"bookings", BookingViewSet)
-router.register(r"ticket-holds", TicketHoldViewSet)
-router.register(r"room-holds", RoomHoldViewSet)
 
 urlpatterns = [
     path("", include(router.urls)),

@@ -238,62 +238,6 @@ class HotelBookingSerializer(serializers.ModelSerializer):
         ]
 
 
-class RoomHoldSerializer(serializers.ModelSerializer):
-    room = RoomSerializer(read_only=True)
-    room_id = serializers.PrimaryKeyRelatedField(
-        queryset=Room.objects.all(), source="room", write_only=True
-    )
-
-    class Meta:
-        model = RoomHold
-        fields = [
-            "id",
-            "room",
-            "room_id",
-            "quantity",
-            "created_at",
-            "expires_at",
-            "session_id",
-        ]
-        read_only_fields = ["created_at", "expires_at", "session_id"]
-
-    def validate(self, data):
-        room = data["room"]
-        quantity = data["quantity"]
-
-        if room.get_available_rooms() < quantity:
-            raise serializers.ValidationError(
-                f"Not enough rooms available for {room.title}"
-            )
-
-        return data
-
-
-class TicketHoldSerializer(serializers.ModelSerializer):
-    pricing_plan = PricingPlanSerializer(read_only=True)
-    pricing_plan_id = serializers.PrimaryKeyRelatedField(
-        queryset=PricingPlan.objects.all(), source="pricing_plan", write_only=True
-    )
-    room_holds = RoomHoldSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = TicketHold
-        fields = [
-            "id",
-            "pricing_plan",
-            "pricing_plan_id",
-            "number_of_tickets",
-            "room_holds",
-            "created_at",
-            "expires_at",
-        ]
-        read_only_fields = ["created_at", "expires_at"]
-
-    def create(self, validated_data):
-        # Set expires_at to 10 minutes from now
-        validated_data["expires_at"] = timezone.now() + timedelta(minutes=10)
-        return super().create(validated_data)
-
 
 class BookingSerializer(serializers.ModelSerializer):
     event_date = EventDateSerializer(read_only=True)
@@ -302,7 +246,6 @@ class BookingSerializer(serializers.ModelSerializer):
     hotel_booking = HotelBookingSerializer(read_only=True)
     room = RoomSerializer(read_only=True)
     add_ons = AddOnSerializer(many=True, read_only=True)
-    ticket_hold = TicketHoldSerializer(read_only=True)
 
     class Meta:
         model = Booking
@@ -332,12 +275,6 @@ class BookingCreateSerializer(serializers.ModelSerializer):
             child=serializers.CharField(), allow_empty=False
         ),
         required=False,
-    )
-    ticket_hold_id = serializers.PrimaryKeyRelatedField(
-        queryset=TicketHold.objects.all(),
-        source="ticket_hold",
-        required=False,
-        allow_null=True,
     )
 
     class Meta:

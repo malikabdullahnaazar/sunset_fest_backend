@@ -30,9 +30,7 @@ from .serializers import (
     HotelBookingSerializer,
     BookingSerializer,
     BookingCreateSerializer,
-    TicketHoldSerializer,
     AddOnTimeSlotSerializer,
-    RoomHoldSerializer,
     CombinedHoldSerializer,
 )
 from django.utils import timezone
@@ -190,136 +188,6 @@ class HotelBookingViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save()
-
-
-class RoomHoldViewSet(viewsets.ModelViewSet):
-    queryset = RoomHold.objects.all()
-    serializer_class = RoomHoldSerializer
-    permission_classes = [AllowAny]
-
-    def get_queryset(self):
-        if self.request.user.is_authenticated:
-            return self.queryset.filter(
-                user=self.request.user, expires_at__gt=timezone.now()
-            )
-        else:
-            # For unauthenticated users, use session ID
-            session_id = self.request.session.get("session_id")
-            if not session_id:
-                session_id = str(uuid.uuid4())
-                self.request.session["session_id"] = session_id
-            return self.queryset.filter(
-                session_id=session_id, expires_at__gt=timezone.now()
-            )
-
-    def perform_create(self, serializer):
-        if self.request.user.is_authenticated:
-            serializer.save(user=self.request.user)
-        else:
-            # For unauthenticated users, use session ID
-            session_id = self.request.session.get("session_id")
-            if not session_id:
-                session_id = str(uuid.uuid4())
-                self.request.session["session_id"] = session_id
-            serializer.save(session_id=session_id)
-
-    @action(detail=True, methods=["post"])
-    def extend(self, request, pk=None):
-        try:
-            room_hold = self.get_queryset().get(pk=pk)
-            extra_minutes = request.data.get("extra_minutes", 5)
-            room_hold.extend_hold(extra_minutes)
-            return Response(
-                RoomHoldSerializer(room_hold).data, status=status.HTTP_200_OK
-            )
-        except RoomHold.DoesNotExist:
-            return Response(
-                {"error": "Room hold not found or has expired"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-
-class TicketHoldViewSet(viewsets.ModelViewSet):
-    queryset = TicketHold.objects.all()
-    serializer_class = TicketHoldSerializer
-    permission_classes = [AllowAny]
-
-    def get_queryset(self):
-        if self.request.user.is_authenticated:
-            return self.queryset.filter(
-                user=self.request.user, expires_at__gt=timezone.now()
-            )
-        else:
-            # For unauthenticated users, use session ID
-            session_id = self.request.session.get("session_id")
-            if not session_id:
-                session_id = str(uuid.uuid4())
-                self.request.session["session_id"] = session_id
-            return self.queryset.filter(
-                session_id=session_id, expires_at__gt=timezone.now()
-            )
-
-    def perform_create(self, serializer):
-        if self.request.user.is_authenticated:
-            serializer.save(user=self.request.user)
-        else:
-            # For unauthenticated users, use session ID
-            session_id = self.request.session.get("session_id")
-            if not session_id:
-                session_id = str(uuid.uuid4())
-                self.request.session["session_id"] = session_id
-            serializer.save(session_id=session_id)
-
-    @action(detail=True, methods=["post"])
-    def extend(self, request, pk=None):
-        try:
-            ticket_hold = self.get_queryset().get(pk=pk)
-            extra_minutes = request.data.get("extra_minutes", 5)
-            ticket_hold.extend_hold(extra_minutes)
-            return Response(
-                TicketHoldSerializer(ticket_hold).data, status=status.HTTP_200_OK
-            )
-        except TicketHold.DoesNotExist:
-            return Response(
-                {"error": "Ticket hold not found or has expired"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-    @action(detail=True, methods=["post"])
-    def add_room_hold(self, request, pk=None):
-        try:
-            # Get the ticket hold using the same logic as get_queryset
-            if request.user.is_authenticated:
-                ticket_hold = TicketHold.objects.filter(
-                    user=request.user, expires_at__gt=timezone.now()
-                ).get(pk=pk)
-            else:
-                session_id = request.session.get("session_id")
-                if not session_id:
-                    session_id = str(uuid.uuid4())
-                    request.session["session_id"] = session_id
-                ticket_hold = TicketHold.objects.filter(
-                    session_id=session_id, expires_at__gt=timezone.now()
-                ).get(pk=pk)
-
-            room_hold_serializer = RoomHoldSerializer(data=request.data)
-            if room_hold_serializer.is_valid():
-                if request.user.is_authenticated:
-                    room_hold = room_hold_serializer.save(user=request.user)
-                else:
-                    room_hold = room_hold_serializer.save(session_id=session_id)
-                ticket_hold.room_holds.add(room_hold)
-                return Response(
-                    TicketHoldSerializer(ticket_hold).data, status=status.HTTP_200_OK
-                )
-            return Response(
-                room_hold_serializer.errors, status=status.HTTP_400_BAD_REQUEST
-            )
-        except TicketHold.DoesNotExist:
-            return Response(
-                {"error": "Ticket hold not found or has expired"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
 
 
 class BookingViewSet(viewsets.ModelViewSet):
