@@ -75,31 +75,44 @@ def get_user_data(validated_data):
 
 
 FACEBOOK_ACCESS_TOKEN_OBTAIN_URL = "https://graph.facebook.com/v12.0/oauth/access_token"
-FACEBOOK_USER_INFO_URL = "https://graph.facebook.com/v12.0/me"
+FACEBOOK_USER_INFO_URL = "https://graph.facebook.com/me/"
 
 
 def facebook_get_access_token(code: str, redirect_uri: str) -> str:
-    data = {
-        "code": code,
+    params = {
         "client_id": settings.FACEBOOK_OAUTH2_CLIENT_ID,
-        "client_secret": settings.FACEBOOK_OAUTH2_CLIENT_SECRET,
         "redirect_uri": redirect_uri,
+        "client_secret": settings.FACEBOOK_OAUTH2_CLIENT_SECRET,
+        "code": code,
     }
 
-    response = requests.get(FACEBOOK_ACCESS_TOKEN_OBTAIN_URL, data=data)
+    response = requests.get(FACEBOOK_ACCESS_TOKEN_OBTAIN_URL, params=params)
+
+    print("FACEBOOK RESPONSE ACCESS TOKEN", response.json())
     if not response.ok:
         raise ValidationError("Could not get access token from Facebook.")
 
-    return response.json()
+    return response.json().get("access_token")
 
 
 def facebook_get_user_info(access_token: str) -> Dict[str, Any]:
     response = requests.get(
         FACEBOOK_USER_INFO_URL, params={"access_token": access_token}
     )
+    print("FACEBOOK RESPONSE", response.json())
 
     if not response.ok:
         raise ValidationError("Could not get user info from Facebook.")
+
+    return response.json()
+
+
+def facebook_get_user_email(user_id: str, access_token: str) -> str:
+    response = requests.get(
+        f"https://graph.facebook.com/{user_id}",
+        params={"access_token": access_token, "fields": "email,name"},
+    )
+    print("FACEBOOK RESPONSE EMAIL", response.json())
 
     return response.json()
 
@@ -117,17 +130,20 @@ def get_facebook_user_data(validated_data):
 
     access_token = facebook_get_access_token(code=code, redirect_uri=redirect_uri)
     user_data = facebook_get_user_info(access_token=access_token)
+    user_email = facebook_get_user_email(
+        user_id=user_data.get("id"), access_token=access_token
+    )
 
     # Creates user in DB if first time login
     User.objects.get_or_create(
-        username=user_data["email"],
-        email=user_data["email"],
-        first_name=user_data.get("given_name") + " " + user_data.get("family_name"),
+        username=user_email["email"],
+        email=user_email["email"],
+        first_name=user_email.get("name"),
     )
 
     profile_data = {
-        "email": user_data["email"],
-        "first_name": user_data.get("given_name"),
-        "last_name": user_data.get("family_name"),
+        "email": user_email["email"],
+        "first_name": user_email.get("name"),
     }
+
     return profile_data

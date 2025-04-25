@@ -1,4 +1,4 @@
-from .services import get_user_data
+from .services import get_user_data, get_facebook_user_data
 from django.shortcuts import redirect
 from django.conf import settings
 from rest_framework.views import APIView
@@ -36,7 +36,7 @@ class FacebookLoginApi(APIView):
         auth_serializer.is_valid(raise_exception=True)
 
         validated_data = auth_serializer.validated_data
-        user_data = get_user_data(validated_data)
+        user_data = get_facebook_user_data(validated_data)
 
         user = User.objects.get(email=user_data["email"])
 
