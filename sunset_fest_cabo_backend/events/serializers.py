@@ -242,7 +242,7 @@ class HotelBookingSerializer(serializers.ModelSerializer):
 class BookingRoomSerializer(serializers.ModelSerializer):
     class Meta:
         model = BookingRoom
-        fields = ['room', 'quantity', 'price']
+        fields = ["room", "quantity", "price"]
 
 
 class BookingRoomCreateSerializer(serializers.ModelSerializer):
@@ -252,16 +252,16 @@ class BookingRoomCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = BookingRoom
-        fields = ['room_id', 'room', 'quantity', 'price']
+        fields = ["room_id", "room", "quantity", "price"]
 
     def validate(self, data):
-        room_id = data.pop('room_id')
+        room_id = data.pop("room_id")
         try:
             room = Room.objects.get(id=room_id)
-            data['room'] = room
+            data["room"] = room
             # Set price from room if not provided
-            if 'price' not in data:
-                data['price'] = room.price
+            if "price" not in data:
+                data["price"] = room.price
         except Room.DoesNotExist:
             raise serializers.ValidationError(f"Room with id {room_id} does not exist")
         return data
@@ -275,38 +275,37 @@ class BookingCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Booking
         fields = [
-            'event_date',
-            'pricing_plan',
-            'group_size',
-            'hotel_booking',
-            'rooms',
-            'add_ons',
-            'user_email',
-            'ticket_hold_id'
+            "id",
+            "event_date",
+            "pricing_plan",
+            "group_size",
+            "hotel_booking",
+            "rooms",
+            "add_ons",
+            "user_email",
+            "ticket_hold_id",
         ]
 
     def create(self, validated_data):
-        rooms_data = validated_data.pop('rooms', [])
-        hotel_booking = validated_data.pop('hotel_booking', None)
-        add_ons = validated_data.pop('add_ons', [])
-        
+        rooms_data = validated_data.pop("rooms", [])
+        hotel_booking = validated_data.pop("hotel_booking", None)
+        add_ons = validated_data.pop("add_ons", [])
+
         # Remove status if it exists in validated_data
-        validated_data.pop('status', None)
-        
+        validated_data.pop("status", None)
+
         # Create booking
         booking = Booking.objects.create(
-            **validated_data,
-            hotel_booking=hotel_booking,
-            status='CONFIRMED'
+            **validated_data, hotel_booking=hotel_booking, status="CONFIRMED"
         )
-        
+
         # Set add-ons
         booking.add_ons.set(add_ons)
-        
+
         # Create booking rooms
         for room_data in rooms_data:
             BookingRoom.objects.create(booking=booking, **room_data)
-        
+
         return booking
 
 
@@ -367,15 +366,16 @@ class BookingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Booking
         fields = [
-            'id',
-            'event_date',
-            'pricing_plan',
-            'group_size',
-            'hotel_booking',
-            'rooms',
-            'add_ons',
-            'total_price',
-            'status',
-            'created_at',
-            'updated_at'
+            "id",
+            "event_date",
+            "pricing_plan",
+            "group_size",
+            "hotel_booking",
+            "rooms",
+            "add_ons",
+            "total_price",
+            "status",
+            "is_paid",
+            "created_at",
+            "updated_at",
         ]

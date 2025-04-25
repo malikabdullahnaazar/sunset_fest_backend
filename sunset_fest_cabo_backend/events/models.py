@@ -174,16 +174,20 @@ class Room(models.Model):
 
     def get_available_rooms(self):
         # Get all confirmed bookings for this room type through BookingRoom
-        confirmed_bookings = BookingRoom.objects.filter(
-            room=self,
-            booking__status='CONFIRMED'
-        ).aggregate(total_quantity=models.Sum('quantity'))['total_quantity'] or 0
+        confirmed_bookings = (
+            BookingRoom.objects.filter(
+                room=self, booking__status="CONFIRMED"
+            ).aggregate(total_quantity=models.Sum("quantity"))["total_quantity"]
+            or 0
+        )
 
         # Get all active room holds
-        active_room_holds = RoomHold.objects.filter(
-            room=self, 
-            expires_at__gt=timezone.now()
-        ).aggregate(total_quantity=models.Sum('quantity'))['total_quantity'] or 0
+        active_room_holds = (
+            RoomHold.objects.filter(room=self, expires_at__gt=timezone.now()).aggregate(
+                total_quantity=models.Sum("quantity")
+            )["total_quantity"]
+            or 0
+        )
 
         # Calculate available rooms
         available = self.total_rooms - confirmed_bookings - active_room_holds
@@ -431,8 +435,10 @@ class Booking(models.Model):
     )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(get_user_model(), on_delete=models.CASCADE,blank=True, null=True)
-    user_email=models.EmailField(blank=True, null=True)
+    user = models.ForeignKey(
+        get_user_model(), on_delete=models.CASCADE, blank=True, null=True
+    )
+    user_email = models.EmailField(blank=True, null=True)
     event_date = models.ForeignKey(EventDate, on_delete=models.CASCADE)
     pricing_plan = models.ForeignKey(PricingPlan, on_delete=models.CASCADE)
     group_size = models.ForeignKey(GroupSize, on_delete=models.CASCADE)
@@ -443,6 +449,7 @@ class Booking(models.Model):
     )
     total_price = models.DecimalField(max_digits=12, decimal_places=2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
+    is_paid = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -501,7 +508,10 @@ class Booking(models.Model):
             + self.group_size.base_price
             + (self.hotel_booking.accommodation.price if self.hotel_booking else 0)
         )
-        total += sum(booking_room.price * booking_room.quantity for booking_room in self.booking_rooms.all())
+        total += sum(
+            booking_room.price * booking_room.quantity
+            for booking_room in self.booking_rooms.all()
+        )
         total += sum(add_on.price for add_on in self.add_ons.all())
         return total
 
@@ -523,7 +533,9 @@ class Booking(models.Model):
 
 class BookingRoom(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='booking_rooms')
+    booking = models.ForeignKey(
+        Booking, on_delete=models.CASCADE, related_name="booking_rooms"
+    )
     room = models.ForeignKey(Room, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField(default=1)
     price = models.DecimalField(max_digits=10, decimal_places=2)
