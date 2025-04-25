@@ -18,24 +18,24 @@ stripe.api_key = settings.STRIPE_SECRET_KEY
 def create_checkout_session(request, booking_id):
     try:
         booking = get_object_or_404(Booking, id=booking_id)
-        # Get email from booking user or booking email field
-        customer_email = booking.user.email if booking.user else booking.email
+        # # Get email from booking user or booking email field
+        # customer_email = booking.user.email if booking.user else booking.email
 
-        # Check if customer already exists in Stripe
-        existing_customers = stripe.Customer.list(email=customer_email, limit=1)
+        # # Check if customer already exists in Stripe
+        # existing_customers = stripe.Customer.list(email=customer_email, limit=1)
 
-        if existing_customers.data:
-            # Use existing customer
-            customer = existing_customers.data[0]
-        else:
-            # Create new customer
-            customer = stripe.Customer.create(
-                email=customer_email,
-            )
+        # if existing_customers.data:
+        #     # Use existing customer
+        #     customer = existing_customers.data[0]
+        # else:
+        #     # Create new customer
+        #     customer = stripe.Customer.create(
+        #         email=customer_email,
+        #     )
 
         # Create Stripe checkout session
         session = stripe.checkout.Session.create(
-            customer=customer.id,
+            # customer=customer.id,
             payment_method_types=["card"],
             line_items=[
                 {
