@@ -17,6 +17,7 @@ from .models import (
     TicketHold, 
     AddOnTimeSlot,
     RoomHold,
+    TicketType, Ticket
 )
 from .serializers import (
     EventSerializer,
@@ -303,3 +304,52 @@ class CombinedHoldView(APIView):
             )
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class TicketViewSet(viewsets.ModelViewSet):
+    queryset = Ticket.objects.all()
+    serializer_class = TicketSerializer
+
+    def get_queryset(self):
+        ticket_type = self.request.query_params.get('ticket_type')
+        flow_type = self.request.query_params.get('flow_type')
+
+        queryset = self.queryset
+
+        if ticket_type:
+            queryset = queryset.filter(ticket_type__name=ticket_type)
+
+        if flow_type:
+            queryset = queryset.filter(flow_type=flow_type)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+    def get_available_tickets(self):
+        # Calculate tickets used by confirmed bookings
+        confirmed_bookings = Booking.objects.filter(
+            ticket=self, status="CONFIRMED"
+        )
+        tickets_used = sum(
+            booking.group_size.number_of_persons for booking in confirmed_bookings
+        )
+
+        # Calculate tickets currently held
+        active_holds = TicketHold.objects.filter(
+            ticket=self,
+            expires_at__gt=timezone.now(),
+        )
+        held_tickets = sum(hold.number_of_tickets for hold in active_holds)
+
+        return self.total_tickets - tickets_used - held_tickets
+
+    @action(detail=True, methods=['get'])
+    def availability(self, request, pk=None):
+        ticket = self.get_object()
+        return Response({
+            'available_tickets': ticket.get_available_tickets(),
+            'hotel_option': ticket.hotel_option,
+            'add_ons': AddOnSerializer(ticket.add_ons.all(), many=True).data,
+        })

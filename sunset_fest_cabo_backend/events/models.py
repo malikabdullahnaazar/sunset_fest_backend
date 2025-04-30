@@ -564,3 +564,36 @@ class BookingAddOn(models.Model):
 
     def __str__(self):
         return f"{self.booking.id} - {self.add_on.title}"
+
+
+class TicketType(models.Model):
+    TICKET_CHOICES = [
+        ('GA', 'General Admission'),
+        ('VIP', 'VIP'),
+        ('Captain', 'Captain'),
+        ('Admiral', 'Admiral'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=50, choices=TICKET_CHOICES)
+
+    def __str__(self):
+        return self.name
+
+class Ticket(models.Model):
+    TICKET_FLOW_CHOICES = [
+        ('single_day', 'Single Day'),
+        ('three_day', 'Three Day'),
+        ('vip_observation', 'VIP Observation Deck'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    ticket_type = models.ForeignKey(TicketType, on_delete=models.CASCADE, related_name='tickets')
+    flow_type = models.CharField(max_length=50, choices=TICKET_FLOW_CHOICES)
+    event_date = models.ForeignKey(EventDate, on_delete=models.CASCADE, null=True, blank=True)
+    number_of_people = models.PositiveIntegerField()
+    hotel_option = models.BooleanField(default=False)
+    add_ons = models.ManyToManyField(AddOn, blank=True)
+
+    def __str__(self):
+        return f"{self.ticket_type.name} - {self.flow_type}"
